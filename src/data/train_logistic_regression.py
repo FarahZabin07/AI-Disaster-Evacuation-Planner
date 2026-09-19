@@ -1,57 +1,158 @@
 import pandas as pd
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+import joblib
 
+# ==============================
+# 1. Load training data
+# ==============================
 
-# 1. Load ML-ready dataset
-df = pd.read_csv("data/processed/ml_ready_data.csv")
+df = pd.read_csv("data/processed/training_data.csv")
 
 print("Dataset shape:", df.shape)
 
 
-# 2. Separate features and target
-X = df.drop("blocked_proxy", axis=1)
-y = df["blocked_proxy"]
+# ==============================
+# 2. Separate target
+# ==============================
+
+target = "blocked_proxy"
+
+X = df.drop(columns=[target])
+y = df[target]
+
+# earthquake_id is used ONLY for grouping.
+# It must not be used as a model feature.
+groups = X["earthquake_id"]
+
+X = X.drop(columns=["earthquake_id", "road_id"])
 
 
-# 3. Split into training and testing data
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42,
-    stratify=y
+# ==============================
+# 3. Group-based train/test split
+# ==============================
+
+gss = GroupShuffleSplit(
+    n_splits=1,
+    test_size=0.20,
+    random_state=42
 )
 
+train_idx, test_idx = next(
+    gss.split(X, y, groups=groups)
+)
 
-print("Training samples:", len(X_train))
+X_train = X.iloc[train_idx]
+X_test = X.iloc[test_idx]
+
+y_train = y.iloc[train_idx]
+y_test = y.iloc[test_idx]
+
+
+print("\nTraining samples:", len(X_train))
 print("Testing samples:", len(X_test))
 
+print(
+    "Unique earthquakes in training:",
+    groups.iloc[train_idx].nunique()
+)
 
-# 4. Create Logistic Regression model
-model = LogisticRegression(
-    max_iter=1000
+print(
+    "Unique earthquakes in testing:",
+    groups.iloc[test_idx].nunique()
 )
 
 
-# 5. Train the model
+# ==============================
+# 4. Identify columns
+# ==============================
+
+categorical_features = [
+    "road_type",
+    "oneway"
+]
+
+numeric_features = [
+    "magnitude",
+    "earthquake_depth_km",
+    "distance_from_epicenter_km",
+    "road_length_m",
+    "lanes",
+    "maxspeed"
+]
+
+
+# ==============================
+# 5. Preprocessing
+# ==============================
+
+numeric_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")),
+    ("scaler", StandardScaler())
+])
+
+categorical_pipeline = Pipeline([
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore"))
+])
+
+preprocessor = ColumnTransformer([
+    ("numeric", numeric_pipeline, numeric_features),
+    ("categorical", categorical_pipeline, categorical_features)
+])
+
+
+# ==============================
+# 6. Logistic Regression
+# ==============================
+
+model = Pipeline([
+    ("preprocessor", preprocessor),
+    ("classifier", LogisticRegression(
+        max_iter=1000,
+        random_state=42
+    ))
+])
+
+
+# ==============================
+# 7. Train
+# ==============================
+
 model.fit(X_train, y_train)
 
+print("\nModel trained successfully!")
 
-# 6. Make predictions
+
+# ==============================
+# 8. Prediction
+# ==============================
+
 y_pred = model.predict(X_test)
 
 
-# 7. Evaluate the model
+# ==============================
+# 9. Evaluation
+# ==============================
+
 accuracy = accuracy_score(y_test, y_pred)
 
-print("\nModel trained successfully!")
-print("Accuracy:", accuracy)
+print("\nAccuracy:", accuracy)
 
 print("\nConfusion Matrix:")
 print(confusion_matrix(y_test, y_pred))
 
 print("\nClassification Report:")
 print(classification_report(y_test, y_pred))
+joblib.dump(
+    model,
+    "data/processed/logistic_regression_model.pkl"
+)
+
+print("\nModel saved successfully!")
