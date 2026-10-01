@@ -82,7 +82,7 @@ else:
 st.sidebar.header("2. Evacuation Parameters")
 dhaka_neighborhoods = {
     "Gulshan-2 Circle": (23.7925, 90.4078),
-    "Banani Road 11": (23.7937, 90.4046),
+    "Banani Road 11": (23.7910, 90.4080),
     "Uttara Sector 3": (23.8687, 90.3986),
     "Mirpur-10 Circle": (23.8069, 90.3687),
     "Dhanmondi 27": (23.7533, 90.3769),
@@ -139,21 +139,50 @@ with col_details:
     else:
         st.error("No feasible shelter found. Try lowering group size or adjusting the threshold.")
 
+    st.markdown("---")
+    st.subheader("🎨 Map Legend")
+    st.markdown(
+        """
+        * 🔵 **Blue House Icon:** Your Evacuation Starting Point
+        * 🟢 **Green Shield:** Recommended Shelter (Safe & has space)
+        * 🟣 **Purple Shield:** Alternative Shelter (Open)
+        * 🟠 **Orange Shield:** Shelter Full / Insufficient Capacity
+        * 🟦 **Thick Blue Line:** Safe Evacuation Path (A* algorithm)
+        * 🟥 **Red Lines:** Blocked Roads (Debris / Structural Failure)
+        """
+    )
+
 with col_map:
     st.subheader("🗺 Risk-Aware Dhaka Evacuation Map")
 
     m = folium.Map(
-        location=[23.7900, 90.3950],
-        zoom_start=12,
+        location=[origin_coords[0], origin_coords[1]],
+        zoom_start=13,
         tiles="OpenStreetMap"
     )
 
+    # 1. Draw Blocked Roads as Red Lines directly on the map
+    if blocked_edges > 0:
+        blocked_df = risk_df[risk_df["is_blocked"] == 1].head(250)
+        for _, row in blocked_df.iterrows():
+            if "geometry" in row and row["geometry"] is not None:
+                coords = [(pt[1], pt[0]) for pt in row["geometry"].coords]
+                folium.PolyLine(
+                    coords,
+                    color="#FF0000",
+                    weight=3,
+                    opacity=0.75,
+                    tooltip=f"BLOCKED: Road failure risk {row['risk_prob']*100:.1f}%",
+                ).add_to(m)
+
+    # 2. Origin Marker
     folium.Marker(
         location=[origin_coords[0], origin_coords[1]],
         popup=f"Origin: {origin_name} ({group_size} evacuees)",
         icon=folium.Icon(color="blue", icon="home", prefix="fa"),
     ).add_to(m)
 
+    # 3. Shelter Markers
     for _, sh in csp_solver.shelters_df.iterrows():
         is_chosen = assignment and (sh["shelter_id"] == assignment["shelter_id"])
         color = "green" if is_chosen else ("orange" if sh["available_capacity"] < group_size else "purple")
@@ -164,6 +193,7 @@ with col_map:
             icon=folium.Icon(color=color, icon="shield", prefix="fa"),
         ).add_to(m)
 
+    # 4. Safe Recommended Route (Blue Line)
     if assignment and assignment.get("route"):
         route_nodes = assignment["route"]
         route_coords = [
