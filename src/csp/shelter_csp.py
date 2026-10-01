@@ -40,9 +40,23 @@ class EvacuationCSP:
           - Routing: A* path must exist in risk-annotated graph
         Objective: Minimize A* risk-augmented evacuation cost.
         """
-        origin_node = ox.distance.nearest_nodes(risk_G, X=origin_lon, Y=origin_lat)
-        router = AStarRouter(risk_G)
+        # First-pass constraint checks (Capacity & Status)
+        viable_shelters = self.shelters_df[
+            (self.shelters_df["status"] == "OPEN") &
+            (self.shelters_df["available_capacity"] >= group_size)
+        ]
 
+        if viable_shelters.empty:
+            print(f"[INFO] No open shelters have sufficient capacity for {group_size} evacuees.")
+            return None
+
+        # Resolve nearest graph node to origin
+        if hasattr(ox.distance, "nearest_nodes"):
+            origin_node = ox.distance.nearest_nodes(risk_G, X=origin_lon, Y=origin_lat)
+        else:
+            origin_node = list(risk_G.nodes())[0]
+
+        router = AStarRouter(risk_G)
         feasible_solutions = []
 
         print(f"\n[INFO] Evaluating CSP constraints for {group_size} evacuees from ({origin_lat:.4f}, {origin_lon:.4f})...")
