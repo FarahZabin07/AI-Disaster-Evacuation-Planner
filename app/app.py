@@ -16,6 +16,8 @@ if str(ROOT_DIR) not in sys.path:
 import streamlit as st
 import pandas as pd
 import folium
+import requests
+from streamlit_autorefresh import st_autorefresh
 from streamlit_folium import st_folium
 
 from src.ml.predict_risk import RoadRiskPredictor
@@ -28,6 +30,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+st_autorefresh(interval=300000, key="earthquake_refresh")
 
 st.title("🚨 AI-Based Earthquake Disaster Evacuation Planner (Dhaka)")
 st.caption(
@@ -43,9 +46,41 @@ def get_graph():
 def get_predictor():
     return RoadRiskPredictor()
 
-@st.cache_data(show_spinner="Loading historical earthquakes...")
+@st.cache_data(ttl=300, show_spinner="Fetching latest earthquakes from USGS...")
 def get_earthquakes():
-    return pd.read_csv("data/raw/earthquakes.csv")
+    url = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson"
+
+    try:
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+
+        data = response.json()
+
+        earthquakes = []
+
+        for feature in data.get("features", []):
+            properties = feature.get("properties", {})
+            coordinates = feature.get("geometry", {}).get("coordinates", [])
+
+            if len(coordinates) < 3:
+                continue
+
+            earthquakes.append({
+                "place": properties.get("place", "Unknown"),
+                "magnitude": properties.get("mag"),
+                "time": pd.to_datetime(properties.get("time"), unit="ms"),
+                "longitude": coordinates[0],
+                "latitude": coordinates[1],
+                "depth_km": coordinates[2],
+            })
+
+        return pd.DataFrame(earthquakes)
+
+    except Exception as e:
+        st.warning(
+            f"Could not fetch live USGS data. Using saved earthquake data instead. Error: {e}"
+        )
+        return pd.read_csv("data/raw/earthquakes.csv")
 
 try:
     base_G = get_graph()
