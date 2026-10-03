@@ -17,6 +17,7 @@ import streamlit as st
 import pandas as pd
 import folium
 import requests
+from streamlit_js_eval import streamlit_js_eval
 from streamlit_autorefresh import st_autorefresh
 from streamlit_folium import st_folium
 
@@ -90,7 +91,24 @@ try:
 except Exception as e:
     st.error(f"Initialization error: {e}. Please ensure Phases 1 through 15 are completed.")
     st.stop()
-
+# ----------------- GET LIVE LOCATION -----------------
+location = streamlit_js_eval(
+    js_expressions="""
+    new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+            (position) => resolve({
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy
+            }),
+            (error) => resolve({
+                error: error.message
+            })
+        );
+    })
+    """,
+    key="get_location"
+)
 # ----------------- SIDEBAR CONTROLS -----------------
 st.sidebar.header("1. Seismic Event Setup")
 quake_mode = st.sidebar.radio("Earthquake Input Mode", ["Select USGS Event", "Custom Simulation"])
@@ -123,8 +141,54 @@ dhaka_neighborhoods = {
     "Dhanmondi 27": (23.7533, 90.3769),
     "Shahbagh / Dhaka Univ": (23.7381, 90.3957),
 }
-origin_name = st.sidebar.selectbox("Evacuation Origin", list(dhaka_neighborhoods.keys()))
-origin_coords = dhaka_neighborhoods[origin_name]
+use_live_location = st.sidebar.checkbox(
+    "📍 Use My Live Location",
+    value=False,
+    key="live_location_checkbox"
+)
+
+if use_live_location and isinstance(location, dict) and "latitude" in location:
+    origin_name = "📍 My Current Location"
+    origin_coords = (
+        float(location["latitude"]),
+        float(location["longitude"])
+    )
+
+    st.sidebar.success(
+        f"Location detected: {origin_coords[0]:.5f}, {origin_coords[1]:.5f}"
+    )
+
+if use_live_location and isinstance(location, dict) and "latitude" in location:
+    origin_name = "📍 My Current Location"
+    origin_coords = (
+        float(location["latitude"]),
+        float(location["longitude"])
+    )
+
+    st.sidebar.success(
+        f"Location detected: {origin_coords[0]:.5f}, {origin_coords[1]:.5f}"
+    )
+
+elif use_live_location and isinstance(location, dict) and "error" in location:
+    origin_name = st.sidebar.selectbox(
+        "Evacuation Origin",
+        list(dhaka_neighborhoods.keys())
+    )
+
+    origin_coords = dhaka_neighborhoods[origin_name]
+
+    st.sidebar.warning(
+        f"Could not get location: {location['error']}"
+    )
+
+else:
+    origin_name = st.sidebar.selectbox(
+        "Evacuation Origin",
+        list(dhaka_neighborhoods.keys())
+    )
+
+    origin_coords = dhaka_neighborhoods[origin_name]
+
 
 group_size = st.sidebar.number_input("Evacuee Group Size", min_value=10, max_value=15000, value=800, step=50)
 risk_threshold = st.sidebar.slider("Road Severance Threshold P(risk)", 0.50, 0.95, 0.75, 0.05)
