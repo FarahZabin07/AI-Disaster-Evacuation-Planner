@@ -79,7 +79,15 @@ else:
     eq_lat = st.sidebar.number_input("Epicenter Latitude", 20.0, 28.0, 24.30, 0.05)
     eq_lon = st.sidebar.number_input("Epicenter Longitude", 88.0, 93.0, 91.20, 0.05)
 
+from streamlit_js_eval import get_geolocation
+
 st.sidebar.header("2. Evacuation Parameters")
+
+origin_mode = st.sidebar.radio(
+    "Origin Source",
+    ["Preset Neighborhoods", "📍 Use My Live Location", "Custom Coordinates"]
+)
+
 dhaka_neighborhoods = {
     "Gulshan-2 Circle": (23.7925, 90.4078),
     "Banani Road 11": (23.7910, 90.4080),
@@ -88,8 +96,29 @@ dhaka_neighborhoods = {
     "Dhanmondi 27": (23.7533, 90.3769),
     "Shahbagh / Dhaka Univ": (23.7381, 90.3957),
 }
-origin_name = st.sidebar.selectbox("Evacuation Origin", list(dhaka_neighborhoods.keys()))
-origin_coords = dhaka_neighborhoods[origin_name]
+
+if origin_mode == "📍 Use My Live Location":
+    loc = get_geolocation()
+    if loc and "coords" in loc:
+        user_lat = float(loc["coords"]["latitude"])
+        user_lon = float(loc["coords"]["longitude"])
+        origin_coords = (user_lat, user_lon)
+        origin_name = f"My Live Location ({user_lat:.4f}, {user_lon:.4f})"
+        st.sidebar.success(f"📍 GPS Locked: `{user_lat:.4f}, {user_lon:.4f}`")
+    else:
+        st.sidebar.warning("Allow browser location permission. Using fallback (Dhanmondi).")
+        origin_coords = (23.7533, 90.3769)
+        origin_name = "Live Location (Fallback - Dhanmondi)"
+
+elif origin_mode == "Custom Coordinates":
+    custom_lat = st.sidebar.number_input("Latitude", 23.6000, 24.0000, 23.7800, 0.0001, format="%.5f")
+    custom_lon = st.sidebar.number_input("Longitude", 90.3000, 90.5500, 90.4000, 0.0001, format="%.5f")
+    origin_coords = (custom_lat, custom_lon)
+    origin_name = f"Custom Pin ({custom_lat:.4f}, {custom_lon:.4f})"
+
+else:
+    origin_name = st.sidebar.selectbox("Evacuation Origin", list(dhaka_neighborhoods.keys()))
+    origin_coords = dhaka_neighborhoods[origin_name]
 
 group_size = st.sidebar.number_input("Evacuee Group Size", min_value=10, max_value=15000, value=800, step=50)
 risk_threshold = st.sidebar.slider("Road Severance Threshold P(risk)", 0.50, 0.95, 0.75, 0.05)
